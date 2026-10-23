@@ -1,4 +1,6 @@
+import { after } from 'next/server';
 import { sql } from '../../../lib/db';
+import { notifyNewEntry } from '../../../lib/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,7 +71,11 @@ export async function POST(request) {
     const [row] = await sql`
       INSERT INTO entries (name, message) VALUES (${name}, ${message})
       RETURNING id, name, message, created_at`;
-    return Response.json({ entry: toEntry(row) }, { status: 201 });
+    const entry = toEntry(row);
+    // 응답을 먼저 보내고, 그다음 구독한 기기들에 알림을 보내요.
+    const exceptEndpoint = request.headers.get('x-push-endpoint');
+    after(() => notifyNewEntry(entry, exceptEndpoint).catch(() => {}));
+    return Response.json({ entry }, { status: 201 });
   } catch {
     return error(500, '저장하지 못했습니다. 다시 시도해 주세요.');
   }
